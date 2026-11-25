@@ -2,9 +2,10 @@ import { BadRequestException, Body, Controller, HttpCode, Inject, Put } from '@n
 import { z } from 'zod';
 import { CLOCK } from '../../application/clock.js';
 import type { AdjustableClock } from '../../application/clock.js';
+import { isoDateTimeWithZone } from './input.js';
 
 const clockInput = z.object({
-  now: z.string().toUpperCase().pipe(z.iso.datetime({ offset: true })),
+  now: isoDateTimeWithZone,
 });
 
 @Controller('test/clock')
