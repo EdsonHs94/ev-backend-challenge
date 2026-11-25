@@ -1,3 +1,7 @@
+## Purpose
+
+Permite levantar y comprobar la API de ClinicSay en un entorno reproducible, y controlar el tiempo del servicio para las pruebas de integración.
+
 ## ADDED Requirements
 
 ### Requirement: Arranque mediante Docker Compose
@@ -36,6 +40,11 @@ En modo `CLOCK_MODE=test`, la API SHALL aceptar un instante ISO 8601 con zona me
 
 - **WHEN** un cliente fija `now` en `2027-03-28T10:00:00+02:00`
 - **THEN** recibe HTTP 204 y el reloj de prueba devuelve el instante `2027-03-28T08:00:00.000Z`, también desde otra instancia.
+
+#### Scenario: Ajuste con separadores en minúsculas
+
+- **WHEN** un cliente fija `now` en `2027-03-28t08:00:00z`
+- **THEN** recibe HTTP 204 y el reloj de prueba devuelve el instante `2027-03-28T08:00:00.000Z`.
 
 #### Scenario: Fecha inválida o sin zona
 
