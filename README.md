@@ -25,6 +25,8 @@ La ruta de ajuste responde 204 en modo de prueba. El instante se comparte entre 
 
 Registra una clínica con `POST /clinics` y un paciente de esa clínica con `POST /patients`. Después usa `POST /appointments` con sus identificadores y un `startsAt` futuro en ISO 8601 con zona. `GET /appointments/{id}` devuelve la cita en UTC y su historial de recordatorios. Usa `PATCH /appointments/{id}` para reprogramarla y `POST /appointments/{id}/cancel` para cancelarla.
 
+En el alta, el teléfono es opcional y admite `null`. Si se proporciona, debe tener un signo `+` seguido de 8 a 15 dígitos, con el primero del 1 al 9, según el formato del proveedor simulado.
+
 El recordatorio se programa a la misma hora local del día anterior en la zona IANA de la clínica. Si esa hora pasó, se parte de la hora del servicio. Entre las 21:00 incluidas y las 09:00 excluidas, la programación se mueve a las próximas 09:00 locales. Si el resultado coincide con el inicio de la cita o queda después, el recordatorio aparece como `skipped` con motivo `too_late`.
 
 Por ejemplo, una cita en Madrid el 28 de marzo de 2027 a las 10:00 locales empieza a las 08:00 UTC. Su recordatorio queda para el 27 de marzo a las 09:00 UTC, las 10:00 locales del día anterior.

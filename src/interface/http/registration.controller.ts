@@ -22,7 +22,7 @@ const clinicBody = z.object({
 const patientBody = z.object({
   clinicId: nonEmptyText,
   name: nonEmptyText,
-  phone: z.string().regex(/^\+[1-9][0-9]{1,14}$/).nullable().optional(),
+  phone: z.string().regex(/^\+[1-9][0-9]{7,14}$/).nullable().optional(),
   acceptsReminders: z.boolean(),
 });
 

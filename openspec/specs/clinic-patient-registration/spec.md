@@ -21,7 +21,7 @@ Permite registrar clínicas con su zona horaria y pacientes con sus datos de con
 
 ### Requirement: Alta de un paciente
 
-`POST /patients` SHALL registrar al paciente con `clinicId`, nombre, preferencia booleana `acceptsReminders` y teléfono opcional en formato E.164. Un alta válida SHALL devolver HTTP 201 y representar la ausencia de teléfono con `null`. Un cuerpo inválido SHALL devolver HTTP 400. Una clínica inexistente con un cuerpo válido SHALL devolver HTTP 404.
+`POST /patients` SHALL registrar al paciente con `clinicId`, nombre, preferencia booleana `acceptsReminders` y teléfono opcional en el formato del simulador. Si se proporciona, SHALL empezar por `+` y contener entre 8 y 15 dígitos, con el primero del 1 al 9. Un alta válida SHALL devolver HTTP 201 y representar la ausencia de teléfono con `null`. Un cuerpo inválido SHALL devolver HTTP 400. Una clínica inexistente con un cuerpo válido SHALL devolver HTTP 404.
 
 #### Scenario: Paciente sin teléfono
 
@@ -42,3 +42,8 @@ Permite registrar clínicas con su zona horaria y pacientes con sus datos de con
 
 - **WHEN** se registra un paciente con datos válidos para una clínica inexistente
 - **THEN** devuelve HTTP 404.
+
+#### Scenario: Límites de longitud del teléfono
+
+- **WHEN** se registra un paciente con un número que tiene 7, 8, 15 o 16 dígitos después del signo `+`
+- **THEN** los números de 7 y 16 dígitos reciben HTTP 400 y los de 8 y 15 reciben HTTP 201 si su primer dígito está entre 1 y 9.
