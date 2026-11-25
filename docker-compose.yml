@@ -1,7 +1,50 @@
-# Añade aquí tu servicio `api` (puerto 3000, CLOCK_MODE=test, PROVIDER_URL=http://provider:4010)
-# y su base de datos. El servicio `provider` no se modifica.
 services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      CLOCK_MODE: test
+      DATABASE_URL: postgres://clinicsay:clinicsay@db:5432/clinicsay
+      PROVIDER_URL: http://provider:4010
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exitCode = 1 }).catch(() => { process.exitCode = 1 })"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: clinicsay
+      POSTGRES_USER: clinicsay
+      POSTGRES_PASSWORD: clinicsay
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U clinicsay -d clinicsay"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   provider:
     build: ./provider
     ports:
       - "4010:4010"
+
+  checks:
+    profiles: ["checks"]
+    build:
+      context: .
+      target: checks
+    environment:
+      DATABASE_URL: postgres://clinicsay:clinicsay@db:5432/clinicsay
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
