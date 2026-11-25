@@ -29,13 +29,25 @@ El recordatorio se programa a la misma hora local del día anterior en la zona I
 
 Por ejemplo, una cita en Madrid el 28 de marzo de 2027 a las 10:00 locales empieza a las 08:00 UTC. Su recordatorio queda para el 27 de marzo a las 09:00 UTC, las 10:00 locales del día anterior.
 
+## Envío de recordatorios
+
+```sh
+curl --fail --request POST http://localhost:3000/jobs/reminders/run
+```
+
+La pasada devuelve `processed` con la cantidad de recordatorios que actualizó. Antes de cada llamada comprueba la cita, el teléfono y la preferencia del paciente. Un primer envío atrasado durante la franja nocturna se aplaza hasta las próximas 09:00 locales. Los reintentos vencen un minuto después del primer fallo y cinco minutos después del segundo, también durante la noche. Hay como máximo tres llamadas por recordatorio y cada una espera respuesta hasta cinco segundos.
+
+Las pasadas paralelas toman el trabajo con `FOR UPDATE SKIP LOCKED`. La transacción conserva el bloqueo de la cita y del recordatorio mientras espera al proveedor. Si otra operación tiene la cita bloqueada, el trabajo sigue disponible para una pasada posterior si aún está pendiente.
+
+Cada llamada reutiliza el identificador del recordatorio como clave de idempotencia. Si el proveedor entrega y devuelve 504, el segundo intento puede recibir 200 por la misma entrega. Si se pierde la conexión con PostgreSQL entre la llamada y el commit, la pasada devuelve un error y una pasada posterior puede repetir la llamada con la misma clave. La deduplicación en ese caso depende de que el proveedor conserve la clave.
+
 ## Pruebas
 
 ```sh
 docker compose run --rm --build checks
 ```
 
-El comando ejecuta lint, chequeo de tipos, pruebas de calendario y pruebas HTTP de integración con PostgreSQL. Cada suite de integración usa su propia base temporal. GitHub Actions ejecuta estas comprobaciones y verifica el arranque de la pila y los endpoints iniciales.
+El comando ejecuta lint, chequeo de tipos, pruebas de calendario y pruebas HTTP de integración con PostgreSQL y el proveedor simulado. Cada suite de integración usa su propia base temporal. GitHub Actions ejecuta estas comprobaciones y verifica el arranque de la pila y los endpoints iniciales.
 
 ## Arquitectura y OpenSpec
 
@@ -47,9 +59,9 @@ Las [specs vigentes](openspec/specs/) describen el comportamiento verificado. La
 
 ## Alcance actual
 
-Las dos primeras fases cubren arranque, reloj, registro de clínicas y pacientes, ciclo de vida de citas y programación. Quedan pendientes el envío con reintentos, la evaluación del teléfono y la preferencia de recordatorios al enviar, el webhook y la nota de producción.
+Las tres primeras fases cubren arranque, reloj, registro de clínicas y pacientes, ciclo de vida de citas, programación y envío con reintentos. Quedan pendientes el webhook de respuestas y la nota de producción.
 
-Se usó Codex para preparar las propuestas de OpenSpec, implementar las dos fases y escribir pruebas. Durante la verificación se acotó el descubrimiento de pruebas y se corrigió la validación de separadores de fecha en minúsculas. La fase 2 se verificó con escenarios de cambios de hora, persistencia y operaciones concurrentes contra PostgreSQL real.
+Se usó Codex para preparar las propuestas de OpenSpec, implementar las fases y escribir pruebas. Durante la verificación se acotó el descubrimiento de pruebas y se corrigió la validación de separadores de fecha en minúsculas. El envío se comprobó con dos instancias, PostgreSQL y el proveedor simulado, incluidos fallos de red y respuestas ambiguas.
 
 ## Entrega
 

@@ -3,6 +3,7 @@ import type {
   Appointment, AppointmentInput, AppointmentStore, AppointmentTransaction,
 } from '../../application/appointments.js';
 import type { ReminderSchedule } from '../../domain/reminder-scheduling.js';
+import { withTransaction } from './transaction.js';
 
 type AppointmentRecord = Omit<Appointment, 'reminders'>;
 type Sql = Pick<Pool, 'query'>;
@@ -22,25 +23,8 @@ export class PostgresAppointmentStore implements AppointmentStore {
     return findAppointment(this.database, id);
   }
 
-  async transact<T>(operation: (transaction: AppointmentTransaction) => Promise<T>): Promise<T> {
-    const client = await this.database.connect();
-    let discardClient = false;
-
-    try {
-      await client.query('BEGIN');
-      const result = await operation(new PostgresAppointmentTransaction(client));
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      try {
-        await client.query('ROLLBACK');
-      } catch {
-        discardClient = true;
-      }
-      throw error;
-    } finally {
-      client.release(discardClient);
-    }
+  transact<T>(operation: (transaction: AppointmentTransaction) => Promise<T>): Promise<T> {
+    return withTransaction(this.database, (client) => operation(new PostgresAppointmentTransaction(client)));
   }
 }
 

@@ -42,9 +42,12 @@ services:
       target: checks
     environment:
       DATABASE_URL: postgres://clinicsay:clinicsay@db:5432/clinicsay
+      PROVIDER_URL: http://provider:4010
     depends_on:
       db:
         condition: service_healthy
+      provider:
+        condition: service_started
 
 volumes:
   postgres-data:

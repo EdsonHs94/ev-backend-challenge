@@ -3,7 +3,7 @@ import type { AdjustableClock, Clock } from '../../application/clock.js';
 
 export class PostgresTestClock implements AdjustableClock {
   constructor(
-    private readonly database: Pool,
+    private readonly database: Pick<Pool, 'query'>,
     private readonly fallback: Clock,
   ) {}
 
