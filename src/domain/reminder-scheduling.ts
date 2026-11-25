@@ -23,6 +23,20 @@ export function scheduleReminder(startsAt: Date, timezone: string, now: Date): R
     : { scheduledFor, status: 'pending', skipReason: null };
 }
 
+export function nextAllowedReminderTime(candidate: Date, timezone: string): Date {
+  const local = Temporal.Instant.fromEpochMilliseconds(candidate.getTime()).toZonedDateTimeISO(timezone);
+  return new Date(nextAllowedTime(local).epochMilliseconds);
+}
+
+export function reminderMessage(startsAt: Date, timezone: string, patientName: string, clinicName: string): string {
+  const local = Temporal.Instant.fromEpochMilliseconds(startsAt.getTime()).toZonedDateTimeISO(timezone);
+  const twoDigits = (value: number) => String(value).padStart(2, '0');
+  const date = `${twoDigits(local.day)}/${twoDigits(local.month)}/${String(local.year).padStart(4, '0')}`;
+  const time = `${twoDigits(local.hour)}:${twoDigits(local.minute)}`;
+
+  return `Hola ${patientName}, te recordamos tu cita en ${clinicName} el ${date} a las ${time}. Responde SI para confirmar o NO para cancelar.`;
+}
+
 function nextAllowedTime(candidate: Temporal.ZonedDateTime): Temporal.ZonedDateTime {
   const localTime = candidate.toPlainTime();
   const afterClosing = Temporal.PlainTime.compare(localTime, closingTime) >= 0;

@@ -5,8 +5,11 @@ import { Appointments } from './application/appointments.js';
 import { CLOCK } from './application/clock.js';
 import type { Clock } from './application/clock.js';
 import { Registration } from './application/registration.js';
+import { ReminderDelivery } from './application/reminder-delivery.js';
+import { HttpReminderProvider } from './infrastructure/messaging/http-reminder-provider.js';
 import { PostgresAppointmentStore } from './infrastructure/postgres/appointment-store.js';
 import { Database } from './infrastructure/postgres/database.js';
+import { PostgresDeliveryStore } from './infrastructure/postgres/delivery-store.js';
 import { migrate } from './infrastructure/postgres/migrate.js';
 import { PostgresRegistrationStore } from './infrastructure/postgres/registration-store.js';
 import { PostgresTestClock } from './infrastructure/postgres/test-clock.js';
@@ -15,16 +18,20 @@ import { AppointmentsController } from './interface/http/appointments.controller
 import { HttpErrorFilter } from './interface/http/error.filter.js';
 import { HealthController } from './interface/http/health.controller.js';
 import { RegistrationController } from './interface/http/registration.controller.js';
+import { ReminderJobController } from './interface/http/reminder-job.controller.js';
 import { TestClockController } from './interface/http/test-clock.controller.js';
 
 interface ApiOptions {
   databaseUrl: string;
   clockMode?: string;
+  providerUrl?: string;
   port: number;
   quiet?: boolean;
 }
 
-export async function startApi({ databaseUrl, clockMode, port, quiet = false }: ApiOptions) {
+export async function startApi({
+  databaseUrl, clockMode, providerUrl = 'http://provider:4010', port, quiet = false,
+}: ApiOptions) {
   await migrate(databaseUrl, quiet);
   const testMode = clockMode === 'test';
 
@@ -33,6 +40,7 @@ export async function startApi({ databaseUrl, clockMode, port, quiet = false }: 
       HealthController,
       RegistrationController,
       AppointmentsController,
+      ReminderJobController,
       ...(testMode ? [TestClockController] : []),
     ],
     providers: [
@@ -60,6 +68,16 @@ export async function startApi({ databaseUrl, clockMode, port, quiet = false }: 
         useFactory: (database: Database, registration: PostgresRegistrationStore, clock: Clock) => (
           new Appointments(new PostgresAppointmentStore(database), registration, clock)
         ),
+      },
+      {
+        provide: ReminderDelivery,
+        inject: [Database, CLOCK],
+        useFactory: (database: Database, clock: Clock) => {
+          const store = new PostgresDeliveryStore(database, (client) => (
+            testMode ? new PostgresTestClock(client, systemClock) : systemClock
+          ));
+          return new ReminderDelivery(store, new HttpReminderProvider(providerUrl), clock);
+        },
       },
     ],
   })
