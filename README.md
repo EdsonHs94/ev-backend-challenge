@@ -41,6 +41,18 @@ Las pasadas paralelas toman el trabajo con `FOR UPDATE SKIP LOCKED`. La transacc
 
 Cada llamada reutiliza el identificador del recordatorio como clave de idempotencia. Si el proveedor entrega y devuelve 504, el segundo intento puede recibir 200 por la misma entrega. Si se pierde la conexión con PostgreSQL entre la llamada y el commit, la pasada devuelve un error y una pasada posterior puede repetir la llamada con la misma clave. La deduplicación en ese caso depende de que el proveedor conserve la clave.
 
+## Respuestas de pacientes
+
+```sh
+curl --fail --request POST http://localhost:3000/webhooks/inbound-messages \
+  --header 'Content-Type: application/json' \
+  --data '{"messageId":"reply-001","from":"+34600111222","text":"¡Sí!","receivedAt":"2027-03-27T09:10:00Z"}'
+```
+
+`SI` confirma y `NO` cancela la cita y cualquier recordatorio pendiente. Se aceptan tildes, mayúsculas o minúsculas y signos alrededor. El webhook elige el último recordatorio enviado a ese teléfono entre citas futuras y activas, incluso cuando varios pacientes comparten número. Si dos envíos tienen el mismo `sentAt`, se desempata por el orden de registro del envío. La elegibilidad se decide con el reloj del servicio.
+
+El webhook valida el cuerpo antes de registrar el aviso. Devuelve HTTP 200 para avisos válidos procesados, repetidos o ignorados y HTTP 400 para cuerpos inválidos. PostgreSQL guarda una clave derivada de `messageId` en la misma transacción que cambia la cita, por lo que un reintento después de un rollback puede aplicar el cambio.
+
 ## Pruebas
 
 ```sh
@@ -59,9 +71,9 @@ Las [specs vigentes](openspec/specs/) describen el comportamiento verificado. La
 
 ## Alcance actual
 
-Las tres primeras fases cubren arranque, reloj, registro de clínicas y pacientes, ciclo de vida de citas, programación y envío con reintentos. Quedan pendientes el webhook de respuestas y la nota de producción.
+Las cuatro primeras fases cubren arranque, reloj, registro de clínicas y pacientes, ciclo de vida de citas, programación, envío con reintentos y respuestas del paciente. Queda pendiente la nota de producción.
 
-Se usó Codex para preparar las propuestas de OpenSpec, implementar las fases y escribir pruebas. Durante la verificación se acotó el descubrimiento de pruebas y se corrigió la validación de separadores de fecha en minúsculas. El envío se comprobó con dos instancias, PostgreSQL y el proveedor simulado, incluidos fallos de red y respuestas ambiguas.
+Se usó Codex para preparar las propuestas de OpenSpec, implementar las fases y escribir pruebas. Durante la verificación se acotó el descubrimiento de pruebas y se corrigió la validación de separadores de fecha en minúsculas. El envío y el webhook se comprobaron con dos instancias y PostgreSQL. Las pruebas cubren respuestas ambiguas del proveedor, avisos duplicados y el reintento de un aviso tras un rollback.
 
 ## Entrega
 

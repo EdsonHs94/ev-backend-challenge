@@ -51,7 +51,8 @@ export class PostgresDeliveryStore implements DeliveryStore {
       const update = await handle(reminder, clock);
       await client.query(
         `UPDATE reminders
-         SET status = $2, attempts = $3, next_run_at = $4, sent_at = $5, skip_reason = $6
+         SET status = $2, attempts = $3, next_run_at = $4, sent_at = $5, skip_reason = $6,
+             sent_order = CASE WHEN $2 = 'sent' THEN nextval('reminder_sent_order_seq') END
          WHERE id = $1`,
         [
           reminder.id, update.status, update.attempts,

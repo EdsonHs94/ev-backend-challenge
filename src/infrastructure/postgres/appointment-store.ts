@@ -56,15 +56,12 @@ class PostgresAppointmentTransaction implements AppointmentTransaction {
     );
   }
 
-  async cancelAppointment(id: string): Promise<void> {
-    await this.client.query("UPDATE appointments SET status = 'cancelled' WHERE id = $1", [id]);
+  cancelAppointment(id: string): Promise<void> {
+    return cancelAppointment(this.client, id);
   }
 
-  async cancelPendingReminder(appointmentId: string): Promise<void> {
-    await this.client.query(
-      "UPDATE reminders SET status = 'cancelled' WHERE appointment_id = $1 AND status = 'pending'",
-      [appointmentId],
-    );
+  cancelPendingReminder(appointmentId: string): Promise<void> {
+    return cancelPendingReminder(this.client, appointmentId);
   }
 
   async insertReminder(appointmentId: string, schedule: ReminderSchedule): Promise<void> {
@@ -77,6 +74,17 @@ class PostgresAppointmentTransaction implements AppointmentTransaction {
   findAppointment(id: string): Promise<Appointment | undefined> {
     return findAppointment(this.client, id);
   }
+}
+
+export async function cancelAppointment(sql: Sql, id: string): Promise<void> {
+  await sql.query("UPDATE appointments SET status = 'cancelled' WHERE id = $1", [id]);
+}
+
+export async function cancelPendingReminder(sql: Sql, appointmentId: string): Promise<void> {
+  await sql.query(
+    "UPDATE reminders SET status = 'cancelled' WHERE appointment_id = $1 AND status = 'pending'",
+    [appointmentId],
+  );
 }
 
 async function findAppointment(sql: Sql, id: string): Promise<Appointment | undefined> {

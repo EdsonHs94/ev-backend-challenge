@@ -4,12 +4,14 @@ import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import { Appointments } from './application/appointments.js';
 import { CLOCK } from './application/clock.js';
 import type { Clock } from './application/clock.js';
+import { InboundReplies } from './application/inbound-replies.js';
 import { Registration } from './application/registration.js';
 import { ReminderDelivery } from './application/reminder-delivery.js';
 import { HttpReminderProvider } from './infrastructure/messaging/http-reminder-provider.js';
 import { PostgresAppointmentStore } from './infrastructure/postgres/appointment-store.js';
 import { Database } from './infrastructure/postgres/database.js';
 import { PostgresDeliveryStore } from './infrastructure/postgres/delivery-store.js';
+import { PostgresInboundReplyStore } from './infrastructure/postgres/inbound-reply-store.js';
 import { migrate } from './infrastructure/postgres/migrate.js';
 import { PostgresRegistrationStore } from './infrastructure/postgres/registration-store.js';
 import { PostgresTestClock } from './infrastructure/postgres/test-clock.js';
@@ -17,6 +19,7 @@ import { systemClock } from './infrastructure/system-clock.js';
 import { AppointmentsController } from './interface/http/appointments.controller.js';
 import { HttpErrorFilter } from './interface/http/error.filter.js';
 import { HealthController } from './interface/http/health.controller.js';
+import { InboundMessagesController } from './interface/http/inbound-messages.controller.js';
 import { RegistrationController } from './interface/http/registration.controller.js';
 import { ReminderJobController } from './interface/http/reminder-job.controller.js';
 import { TestClockController } from './interface/http/test-clock.controller.js';
@@ -34,6 +37,9 @@ export async function startApi({
 }: ApiOptions) {
   await migrate(databaseUrl, quiet);
   const testMode = clockMode === 'test';
+  const clockFor = (connection: Pick<Database, 'query'>): Clock => (
+    testMode ? new PostgresTestClock(connection, systemClock) : systemClock
+  );
 
   @Module({
     controllers: [
@@ -41,6 +47,7 @@ export async function startApi({
       RegistrationController,
       AppointmentsController,
       ReminderJobController,
+      InboundMessagesController,
       ...(testMode ? [TestClockController] : []),
     ],
     providers: [
@@ -48,9 +55,7 @@ export async function startApi({
       {
         provide: CLOCK,
         inject: [Database],
-        useFactory: (database: Database) => (
-          testMode ? new PostgresTestClock(database, systemClock) : systemClock
-        ),
+        useFactory: clockFor,
       },
       {
         provide: PostgresRegistrationStore,
@@ -73,11 +78,14 @@ export async function startApi({
         provide: ReminderDelivery,
         inject: [Database, CLOCK],
         useFactory: (database: Database, clock: Clock) => {
-          const store = new PostgresDeliveryStore(database, (client) => (
-            testMode ? new PostgresTestClock(client, systemClock) : systemClock
-          ));
+          const store = new PostgresDeliveryStore(database, clockFor);
           return new ReminderDelivery(store, new HttpReminderProvider(providerUrl), clock);
         },
+      },
+      {
+        provide: InboundReplies,
+        inject: [Database],
+        useFactory: (database: Database) => new InboundReplies(new PostgresInboundReplyStore(database, clockFor)),
       },
     ],
   })
