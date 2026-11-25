@@ -110,6 +110,21 @@ test('rejects invalid patient inputs and unknown clinics', async () => {
   await request('POST', '/patients', 404, { ...input, clinicId: 'missing' });
 });
 
+test('accepts the phone lengths supported by the provider', async () => {
+  const { clinicId } = await registerPatient();
+  const input = { clinicId, name: 'Pedro', acceptsReminders: true };
+
+  for (const [phone, status] of [
+    ['+1234567', 400],
+    ['+12345678', 201],
+    ['+123456789012345', 201],
+    ['+1234567890123456', 400],
+  ]) {
+    const result = await request('POST', '/patients', status, { ...input, phone });
+    if (status === 201) assert.equal(result.phone, phone);
+  }
+});
+
 test('creates a scheduled appointment and returns its saved reminder and UTC instants', async () => {
   const patient = await registerPatient();
   const appointment = await createAppointment(patient);

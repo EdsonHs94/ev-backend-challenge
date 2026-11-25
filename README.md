@@ -25,6 +25,8 @@ La ruta de ajuste responde 204 en modo de prueba. El instante se comparte entre 
 
 Registra una clínica con `POST /clinics` y un paciente de esa clínica con `POST /patients`. Después usa `POST /appointments` con sus identificadores y un `startsAt` futuro en ISO 8601 con zona. `GET /appointments/{id}` devuelve la cita en UTC y su historial de recordatorios. Usa `PATCH /appointments/{id}` para reprogramarla y `POST /appointments/{id}/cancel` para cancelarla.
 
+En el alta, el teléfono es opcional y admite `null`. Si se proporciona, debe tener un signo `+` seguido de 8 a 15 dígitos, con el primero del 1 al 9, según el formato del proveedor simulado.
+
 El recordatorio se programa a la misma hora local del día anterior en la zona IANA de la clínica. Si esa hora pasó, se parte de la hora del servicio. Entre las 21:00 incluidas y las 09:00 excluidas, la programación se mueve a las próximas 09:00 locales. Si el resultado coincide con el inicio de la cita o queda después, el recordatorio aparece como `skipped` con motivo `too_late`.
 
 Por ejemplo, una cita en Madrid el 28 de marzo de 2027 a las 10:00 locales empieza a las 08:00 UTC. Su recordatorio queda para el 27 de marzo a las 09:00 UTC, las 10:00 locales del día anterior.
@@ -53,6 +55,51 @@ curl --fail --request POST http://localhost:3000/webhooks/inbound-messages \
 
 El webhook valida el cuerpo antes de registrar el aviso. Devuelve HTTP 200 para avisos válidos procesados, repetidos o ignorados y HTTP 400 para cuerpos inválidos. PostgreSQL guarda una clave derivada de `messageId` en la misma transacción que cambia la cita, por lo que un reintento después de un rollback puede aplicar el cambio.
 
+## Recorrido completo
+
+Después de arrancar Compose, ejecuta este ejemplo con datos ficticios. Crea una cita en Madrid el día del cambio a horario de verano, adelanta el reloj hasta la hora del recordatorio y confirma la cita por webhook. El ajuste del reloj y los datos de ejemplo quedan guardados en la base local.
+
+```sh
+docker compose exec -T api node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { randomInt, randomUUID } from 'node:crypto';
+
+async function api(method, path, status, body) {
+  const response = await fetch('http://127.0.0.1:3000' + path, {
+    method,
+    ...(body === undefined ? {} : {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  });
+  assert.equal(response.status, status);
+  const text = await response.text();
+  return text ? JSON.parse(text) : undefined;
+}
+
+await api('PUT', '/test/clock', 204, { now: '2027-03-26T09:00:00Z' });
+const clinic = await api('POST', '/clinics', 201, { name: 'Clínica Sol', timezone: 'Europe/Madrid' });
+const phone = '+346' + randomInt(10000000, 99999999);
+const patient = await api('POST', '/patients', 201, {
+  clinicId: clinic.id, name: 'Ana', phone, acceptsReminders: true,
+});
+const appointment = await api('POST', '/appointments', 201, {
+  clinicId: clinic.id, patientId: patient.id, startsAt: '2027-03-28T08:00:00Z',
+});
+const due = '2027-03-27T09:00:00.000Z';
+assert.equal(appointment.reminders[0].scheduledFor, due);
+await api('PUT', '/test/clock', 204, { now: due });
+await api('POST', '/jobs/reminders/run', 200);
+await api('POST', '/webhooks/inbound-messages', 200, {
+  messageId: randomUUID(), from: phone, text: '¡Sí!', receivedAt: due,
+});
+const result = await api('GET', '/appointments/' + appointment.id, 200);
+assert.equal(result.status, 'confirmed');
+assert.equal(result.reminders[0].status, 'sent');
+console.log({ appointment: result.status, reminder: result.reminders[0].status });
+JS
+```
+
 ## Pruebas
 
 ```sh
@@ -63,17 +110,30 @@ El comando ejecuta lint, chequeo de tipos, pruebas de calendario y pruebas HTTP 
 
 ## Arquitectura y OpenSpec
 
-La API usa NestJS para HTTP y para conectar los adaptadores. Los casos de uso consumen interfaces independientes de NestJS, como el puerto `Clock`. El dominio calcula la programación con Temporal sobre el calendario local. PostgreSQL guarda los instantes en columnas `timestamptz`; las fechas de la API se serializan en UTC.
+La API usa NestJS para HTTP y para conectar los adaptadores. Los casos de uso consumen puertos para el reloj, la persistencia y la mensajería. Las reglas de calendario y de interpretación de respuestas viven en el dominio.
 
-Usamos `pg` para consultas y `node-pg-migrate` para aplicar SQL versionado. Al reprogramar o cancelar, una transacción bloquea la cita y cambia su estado y recordatorio juntos. Un índice único parcial permite un solo recordatorio pendiente por cita. Reprogramar al mismo instante conserva el historial y una hora nueva devuelve una cita confirmada a `scheduled`.
+El dominio usa Temporal para restar un día del calendario local. Restar 24 horas cambia la hora local cuando hay un salto de horario. PostgreSQL almacena instantes en `timestamptz` y la API los serializa en UTC. Para una hora local repetida elegimos la primera ocurrencia. Si no existe, la desplazamos por la duración del salto.
+
+Usamos `pg` para consultas y `node-pg-migrate` para aplicar SQL versionado. Al reprogramar o cancelar, una transacción bloquea la cita y cambia su estado y recordatorio juntos. Un índice único parcial permite un solo recordatorio pendiente por cita. Reprogramar al mismo instante conserva el historial y una hora nueva devuelve una cita confirmada a `scheduled`. Elegimos PostgreSQL como fuente de estado y coordinación para mantener las transiciones atómicas con las citas. Una cola externa añadiría un segundo sistema y requeriría resolver la publicación consistente con la base.
 
 Las [specs vigentes](openspec/specs/) describen el comportamiento verificado. Las propuestas, el diseño y las tareas quedan en [el historial de cambios](openspec/changes/). Para configurar la integración con Codex, ejecuta `openspec init --tools codex` con la CLI de OpenSpec. Usa la skill `openspec-propose` para el siguiente cambio.
 
-## Alcance actual
+## Alcance y próximos pasos
 
-Las cuatro primeras fases cubren arranque, reloj, registro de clínicas y pacientes, ciclo de vida de citas, programación, envío con reintentos y respuestas del paciente. Queda pendiente la nota de producción.
+La entrega incluye el flujo de citas, recordatorios, reintentos y respuestas del paciente con el proveedor simulado. La pasada se invoca por HTTP como pide el ejercicio. La integración real de WhatsApp, el cron, la autenticación y la monitorización quedan para un despliegue. Con más tiempo probaría las ráfagas de las 09:00 y los fallos prolongados del proveedor. También automatizaría pruebas de actualización de bases existentes y ejercicios de recuperación.
 
-Se usó Codex para preparar las propuestas de OpenSpec, implementar las fases y escribir pruebas. Durante la verificación se acotó el descubrimiento de pruebas y se corrigió la validación de separadores de fecha en minúsculas. El envío y el webhook se comprobaron con dos instancias y PostgreSQL. Las pruebas cubren respuestas ambiguas del proveedor, avisos duplicados y el reintento de un aviso tras un rollback.
+## Nota de producción
+
+- **Capacidad.** Para 500 clínicas y unos 20 000 recordatorios diarios, la media es de unos 14 por minuto. Mediría los picos por zona, en especial al reabrir a las 09:00, y dimensionaría por atraso y cuota del proveedor. Separaría la API del despachador. Un cron por minuto habilitaría el trabajo vencido y varios workers tomarían lotes pequeños con concurrencia acotada.
+- **Despacho y recuperación.** Publicaría el trabajo de envío en una tabla de salida dentro de la misma transacción que actualiza la cita. Un worker reclamaría cada trabajo por un plazo, comprobaría la versión de la cita antes del envío y liberaría el bloqueo de base antes de esperar al proveedor. Guardaría la clave y el resultado para recuperar trabajos vencidos. Si el proveedor no garantiza deduplicación, reconciliaría los resultados ambiguos con sus estados y dejaría en revisión los casos sin evidencia.
+- **WhatsApp y despliegue.** Integraría WhatsApp Business Platform mediante el puerto de mensajería, con una plantilla de recordatorio aprobada y consentimiento del paciente. Guardaría el ID de WhatsApp para correlacionar estados y validaría la firma del webhook. Desplegaría contenedores en una región europea con PostgreSQL gestionado, copias y recuperación probada. Ejecutaría las migraciones como paso del despliegue y usaría un gestor de secretos. [WhatsApp Business Platform](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview)
+- **Monitorización.** Mediría la antigüedad del pendiente más viejo, el p95 del retraso, reintentos, respuestas 429 y 5xx, aceptación, entrega y errores del webhook. Configuraría alertas para una cola atrasada o un aumento sostenido de fallos. Los logs usarían identificadores de correlación y omitirían teléfonos y texto clínico.
+
+## Uso de IA
+
+El autor eligió NestJS, TypeScript, PostgreSQL, Clean Architecture y OpenSpec. Definió el trabajo por fases, pidió incorporar las skills de OpenSpec para Codex y controló los merges. Codex ayudó a redactar las propuestas, implementar los cambios y escribir pruebas.
+
+Durante las verificaciones se acotó el descubrimiento de pruebas, que incluía archivos de aplicación. Se añadió cobertura de regresión al corregir el rechazo de separadores de fecha en minúsculas y un error sin manejar que podía derribar la API si PostgreSQL se desconectaba durante una llamada al proveedor.
 
 ## Entrega
 
