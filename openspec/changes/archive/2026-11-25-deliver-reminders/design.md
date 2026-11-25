@@ -21,5 +21,6 @@ La fase 2 guarda un recordatorio pendiente por cita y usa una transacción con b
 ## Risks / Trade-offs
 
 - Una llamada lenta mantiene una conexión y el bloqueo de la cita hasta cinco segundos. La transacción cubre una sola llamada y los demás recordatorios quedan disponibles para otras pasadas.
+- Si una reprogramación o cancelación tiene bloqueada la cita, la pasada omite ese trabajo. El recordatorio pendiente vuelve a quedar disponible al terminar la escritura.
 - Una caída del proceso entre la llamada y el commit puede ocasionar una nueva llamada de recuperación con la misma clave. El requisito de una llamada por intento se garantiza entre pasadas concurrentes. La protección ante recuperación depende de que el proveedor conserve la clave.
 - El simulador mantiene su historial en memoria. Las pruebas de idempotencia deben conservar el mismo proceso entre intentos.
