@@ -1,0 +1,11 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!eslint.config.mjs
+!src/
+!src/**
+!migrations/
+!migrations/**
+!test/
+!test/**
