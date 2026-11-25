@@ -22,3 +22,4 @@ La fase 1 aporta `Clock`, el pool de PostgreSQL, el arranque con migraciones, Ne
 
 - Una cita se representa como instante UTC más la zona asociada a su clínica. Una actualización futura de reglas IANA podría modificar conversiones locales. La ejecución en Compose usa el mismo runtime e información horaria para pruebas y aplicación.
 - La consulta debe leer una vista coherente de la cita y sus recordatorios mientras hay escrituras concurrentes. Usar una consulta con agregación del historial o una lectura transaccional equivalente.
+- La hora de una operación se toma antes de esperar el bloqueo de la cita. Los instantes se comparan con la precisión de milisegundos del reloj de la fase 1.
